@@ -21,6 +21,7 @@ sys.path.insert(0, SKILL_DIR)
 
 import db
 import appmsg
+import chat_archive
 import contacts
 import message
 
@@ -191,12 +192,36 @@ def main():
     parser.add_argument("--start", help="开始日期 YYYY-MM-DD（默认不限）")
     parser.add_argument("--end", help="结束日期 YYYY-MM-DD，含当天（默认今天）")
     parser.add_argument("-o", "--output", help="输出路径，默认 ~/Desktop/<contact>_<range>.txt")
+    parser.add_argument("--media-map", type=Path, help="JSON/HTML 的附件 ID 到已保存图片路径的 JSON 映射")
     parser.add_argument("--transcribe", action="store_true", help="强制转写语音（即使模型未安装也尝试，触发首次下载）")
     parser.add_argument("--no-transcribe", action="store_true", help="禁用语音转写（即使模型已安装也保留 [Audio]）")
     parser.add_argument("--voice-map", help="复用已有转写 JSON（server_id→文本），跳过重新转写")
     parser.add_argument("--with-media", action="store_true", help="导出图片媒体清单及可读取的本地图片，给聊天记录添加相对链接")
-    parser.add_argument("--format", choices=["txt", "markdown", "html"], help="输出格式；默认按 .md/.html 扩展名判断，其余为 TXT")
+    parser.add_argument("--format", choices=["txt", "markdown", "html", "json"],
+                        help="输出格式；默认按 .md/.html 扩展名判断，其余为 TXT")
     args = parser.parse_args()
+
+    structured = args.format == "json" or args.media_map is not None
+    if structured:
+        suffix = Path(args.output or "").suffix.lower()
+        structured_format = args.format or ("html" if suffix in {".html", ".htm"} else None)
+        if structured_format not in {"json", "html"}:
+            parser.error("--media-map 仅用于 JSON 或 HTML 导出")
+        if args.with_media:
+            parser.error("--with-media 仅用于按本地索引关联的 TXT、Markdown 或 HTML 导出")
+        allowed = {".json"} if structured_format == "json" else {".html", ".htm"}
+        if suffix not in allowed:
+            parser.error(f"{structured_format} 结构化导出需要指定相应扩展名的 --output")
+        output = Path(args.output).expanduser()
+        if not output.parent.is_dir():
+            parser.error("输出目录不存在")
+        media_map_file = args.media_map.expanduser() if args.media_map is not None else None
+        if media_map_file is not None and output.resolve() == media_map_file.resolve():
+            parser.error("导出和图片映射必须使用不同文件")
+        try:
+            media_map = chat_archive.load_media_map(media_map_file)
+        except (OSError, ValueError) as error:
+            parser.error(f"图片映射不可用：{error}")
 
     if not message.has_zstd_decoder():
         print(
@@ -216,6 +241,8 @@ def main():
                    else datetime(2010, 1, 1)
         end_dt = (datetime.strptime(args.end, "%Y-%m-%d") if args.end
                   else datetime.now()) + timedelta(days=1)
+    if structured and start_dt >= end_dt:
+        parser.error("开始日期必须早于结束边界")
 
     name2id = db.get_name2id()
     matched = contacts.find_contact(args.contact, name2id)
@@ -232,7 +259,8 @@ def main():
     is_group = "@chatroom" in wxid or "@openim" in wxid
     db_paths = db.get_message_dbs()
 
-    my_name = contacts.resolve_nickname(db.get_my_wxid())
+    account = db.get_my_wxid()
+    my_name = contacts.resolve_nickname(account)
     peer_name = contacts.resolve_nickname(wxid) if not is_group else "对方"
 
     all_rows = fetch(table, db_paths, start_dt, end_dt)
@@ -268,6 +296,18 @@ def main():
                 "    立即安装并转写：重跑并加 --transcribe（首次自动下载模型）。",
                 file=sys.stderr,
             )
+
+    if structured:
+        archive = chat_archive.build_archive(
+            all_rows, account=account, conversation=wxid, display=display,
+            since=start_dt, until=end_dt, voice_map=voice_map,
+        )
+        try:
+            chat_archive.write_archive(archive, output, structured_format, media_map)
+        except OSError as error:
+            parser.error(f"无法生成导出文件：{error}")
+        print(f"\n导出完成: {output} ({len(archive['messages'])} 条)", file=sys.stderr)
+        return
 
     if args.output:
         out = os.path.expanduser(args.output)

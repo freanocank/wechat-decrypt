@@ -14,10 +14,10 @@ Use the directory containing this `SKILL.md` as `SKILL_DIR`; never assume a fixe
 - macOS: prefer `$SKILL_DIR/.venv/bin/python`, otherwise `python3`.
 - Windows: prefer `$SKILL_DIR\.venv\Scripts\python.exe`, otherwise `python`.
 
-Before reading chat data, run the read-only diagnostic:
+Set `PYTHON` to the selected interpreter. In a packaged runtime such as Hermes, use its configured Python if it provides the skill dependencies. Before reading chat data, run the read-only diagnostic:
 
 ```bash
-"$SKILL_DIR/.venv/bin/python" "$SKILL_DIR/scripts/common/doctor.py" --json
+"$PYTHON" "$SKILL_DIR/scripts/common/doctor.py" --json
 ```
 
 On Windows, use the equivalent venv Python path. Interpret `fail` as blocking and `warn` as optional/degraded:
@@ -39,6 +39,7 @@ On Windows, use the equivalent venv Python path. Interpret `fail` as blocking an
 | Review pats, recalls, group changes, payments, or calls | `wechat_system_events`; filter with a stable code or Chinese label |
 | Review shared music, videos, Channels, mini programs, files, or links | Use normal read/search/summary tools; inspect the structured `app` object in CLI JSON when exact metadata matters |
 | Statistics, media, or a received document | CLI `stats`, `media`, or `openfile` |
+| Hand off a named group's messages for report extraction or another local workflow | Use `export_chat.py --format json` with explicit start and end dates. Follow the [structured handoff instructions](references/export-transcription.md#local-workflow-handoff). |
 | Export history or transcribe voice | Read [references/export-transcription.md](references/export-transcription.md) |
 | Missing chats, a missing shard, or a corrupted database | Read [references/db-repair.md](references/db-repair.md) |
 | macOS setup, key failure, or WeChat update | Read [references/macos.md](references/macos.md) |

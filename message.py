@@ -222,8 +222,8 @@ def has_zstd_decoder() -> bool:
     return bool(_zstd_decompressors())
 
 
-def decode_message_content(content: str | bytes | bytearray | None) -> str:
-    """Decode one WeChat message body and remove its group-sender envelope."""
+def decode_message_content(content: str | bytes | bytearray | None, *, strip_sender_prefix=True) -> str:
+    """Decode a message, with legacy sender-prefix handling by default."""
     compressed = False
     if content is None:
         return ""
@@ -244,17 +244,17 @@ def decode_message_content(content: str | bytes | bytearray | None) -> str:
     else:
         text = str(content)
 
-    prefix = _SENDER_PREFIX.match(text)
+    prefix = _SENDER_PREFIX.match(text) if strip_sender_prefix else None
     if prefix and (compressed or prefix.group(0).startswith("wxid_")):
         text = text[prefix.end():]
     return text
 
 
-def decode_message_hex(value: str | None) -> str:
+def decode_message_hex(value: str | None, *, strip_sender_prefix=True) -> str:
     """Decode a hexadecimal ``message_content`` value."""
     if not value:
         return ""
-    return decode_message_content(bytes.fromhex(value))
+    return decode_message_content(bytes.fromhex(value), strip_sender_prefix=strip_sender_prefix)
 
 
 _my_sender_id_cache: int | None = None

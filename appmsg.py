@@ -327,6 +327,48 @@ def parse_app_message(content: str | bytes | None, raw_type=0) -> dict:
     return result
 
 
+def read_quote_sender_hints(content: str) -> tuple[str, tuple[str, str]]:
+    payload = _Payload(content)
+    refer = payload.nested_node("refermsg")
+    display = payload.nested_text(refer, "displayname")
+    return display, (payload.nested_text(refer, "fromusr"), payload.nested_text(refer, "chatusr"))
+
+
+def read_forwarded_items(content: str) -> list[dict]:
+    """Read immediate records of a type-19 merged chat card."""
+    record_item = _direct_node(_Payload(content).app, "recorditem")
+    if record_item is None:
+        return []
+    record = _direct_node(record_item, "recordinfo")
+    data_list = _direct_node(record if record is not None else record_item, "datalist")
+    if data_list is None:
+        encoded = (record_item.text or "").strip()
+        for value in dict.fromkeys((encoded, html.unescape(encoded))):
+            try:
+                record = ET.fromstring(value)
+            except ET.ParseError:
+                continue
+            data_list = _direct_node(record, "datalist")
+            if data_list is not None:
+                break
+    if data_list is None:
+        return []
+
+    items = []
+    for index, item in enumerate(data_list, start=1):
+        if _local_name(item.tag) != "dataitem":
+            continue
+        kind = {"1": "text", "2": "image"}.get(item.get("datatype"), "unknown")
+        items.append({
+            "record_index": index,
+            "type": kind,
+            "sender_name": _direct_text(item, "sourcename"),
+            "source_time": _direct_text(item, "sourcetime"),
+            "body": _direct_text(item, "datadesc") if kind == "text" else "",
+        })
+    return items
+
+
 def format_app_message(data: dict, include_url: bool = True) -> str:
     """Build a concise, loss-resistant human-readable summary."""
     kind = data.get("kind", "app_message")
